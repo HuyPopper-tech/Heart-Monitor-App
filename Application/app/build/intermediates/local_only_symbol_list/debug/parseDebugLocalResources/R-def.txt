@@ -1,0 +1,27 @@
+R_DEF: Internal format may change without notice
+local
+color background_dark
+color ic_launcher_background
+color on_primary
+color on_secondary
+color primary
+color primary_variant
+color secondary
+color secondary_variant
+color surface_dark
+color text_gray
+color text_white
+drawable ic_bluetooth
+id btnConnect
+id cardChart
+id cardInfo
+id chart
+id tvBPM
+id tvHeader
+id tvStatus
+layout activity_main
+mipmap ic_launcher
+mipmap ic_launcher_foreground
+mipmap ic_launcher_round
+string app_name
+style Theme.ECGMonitor

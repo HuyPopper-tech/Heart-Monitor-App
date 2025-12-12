@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "C:\\Users\\proha\\.gradle\\daemon\\9.0-milestone-1\\com.example.ecgmonitor.app-mergeDebugResources-30:\\layout-land\\activity_main.xml",
+        "source": "C:\\Users\\proha\\.gradle\\daemon\\9.0-milestone-1\\com.example.ecgmonitor.app-main-33:\\layout-land\\activity_main.xml"
+    },
+    {
+        "merged": "com.example.ecgmonitor.app-mergeDebugResources-30:/layout-land/activity_main.xml",
+        "source": "com.example.ecgmonitor.app-main-33:/layout-land/activity_main.xml"
+    }
+]
