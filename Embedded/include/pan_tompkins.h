@@ -3,44 +3,81 @@
 
 #include "stm32f4xx.h"
 #include "arm_math.h"
+#include <stdint.h>
 
-/* Algorithm configuration */
-#define SAMPLE_RATE_HZ      200.0f
-#define INTEGRATION_WINDOW  30
+/*
+ * Pan–Tompkins sample-by-sample pipeline (Fs = 360Hz):
+ * 1) DC removal: y[n] = 0.995*y[n-1] + x[n] - x[n-1]
+ * 2) Bandpass = LPF + HPF (difference equations)
+ * 3) Derivative (5-point), Squaring
+ * 4) Moving Window Integration (150ms)
+ * 5) Local maxima + Adaptive thresholding (refractory 200ms)
+ */
+
+/* Report sampling frequency: Fs = 360Hz */
+#define SAMPLE_RATE_HZ        360.0f
+
+/* Time windows from report */
+#define INTEGRATION_WINDOW    54u   /* 150ms @ 360Hz */
+#define REFRACTORY_SAMPLES    72u   /* 200ms @ 360Hz */
+
+/* Scaled integer-filter delays for Fs = 360Hz (derived from 200Hz Pan–Tompkins delays) */
+#define LPF_DELAY_M           11u   /* round(6 * 360 / 200) */
+#define HPF_DELAY_N           29u   /* round(16 * 360 / 200) */
+#define HPF_DIV_K             58.0f /* = 2*HPF_DELAY_N */
+
+/* Optional: threshold decay if no beat for a long time (kept stable, not continuous) */
+#define NO_BEAT_TIMEOUT_S     15u
+#define NO_BEAT_TIMEOUT_SAMPLES ((uint32_t)(NO_BEAT_TIMEOUT_S * SAMPLE_RATE_HZ))
 
 typedef struct {
-    /* CMSIS-DSP Biquad filter instance for bandpass 5-15Hz */
-    arm_biquad_casd_df1_inst_f32 S;
-    float32_t pState[4];
+    /* Tick counter (one per sample) */
+    uint32_t current_tick;
 
-    /* Derivative filter buffer */
-    float32_t deriv_buff[5]; 
+    /* DC removal state */
+    float32_t dc_y1;
+    float32_t dc_x1;
+
+    /* LPF state */
+    float32_t lpf_y1, lpf_y2;
+    float32_t lpf_x_hist[2*LPF_DELAY_M + 1u];
+    uint16_t  lpf_idx;
+
+    /* HPF state (input is LPF output) */
+    float32_t hpf_y1;
+    float32_t hpf_x_hist[2*HPF_DELAY_N + 1u];
+    uint16_t  hpf_idx;
+
+    /* Derivative buffer */
+    float32_t deriv_buff[5];
 
     /* Moving window integration buffer */
     float32_t win_buff[INTEGRATION_WINDOW];
-    uint8_t win_idx;
+    uint16_t  win_idx;
     float32_t win_sum;
 
-    /* Adaptive threshold variables for R-peak detection */
+    /* Local maxima detector state (on integrated signal) */
+    float32_t int_prev2;
+    float32_t int_prev1;
+
+    /* Adaptive threshold variables */
     float32_t threshold_i;
     float32_t signal_level;
     float32_t noise_level;
-    
-    /* BPM tracking variables */
+
+    /* BPM tracking */
     uint32_t last_beat_tick;
-    uint32_t current_tick;
-    uint8_t  heart_detected;
+    uint32_t last_decay_tick;
     int      current_bpm;
 
 } PanTompkins_Handle_t;
 
-/* Initialize Pan-Tompkins algorithm */
 void PT_Init(PanTompkins_Handle_t *ht);
 
-/* Process one ECG sample and detect heartbeat */
+/* Process one ECG sample and return 1 if a beat is detected at a local maximum */
 uint8_t PT_Process(PanTompkins_Handle_t *ht, uint16_t raw_adc);
 
 /* Get current BPM value */
 int PT_GetBPM(PanTompkins_Handle_t *ht);
 
-#endif
+#endif /* PAN_TOMPKINS_H */

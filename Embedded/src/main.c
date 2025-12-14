@@ -14,9 +14,6 @@ void Error_Handler(void);
 char msg_buffer[HC05_BUFFER_SIZE];
 PanTompkins_Handle_t pt_handle;
 
-/* Current BPM value */
-int current_bpm = 0; 
-
 int main(void) {
     HAL_Init();
     SystemClock_Config();
@@ -24,50 +21,44 @@ int main(void) {
     /* Initialize HC-05 */
     HC05_Init();
 
-    /* Initialize AD8232 with 100Hz sample rate */
-    AD8232_Init(100); 
+    /* Report sampling frequency: 360Hz */
+    AD8232_Init(360);
 
 #if USE_ECG_SIM
-    /* Initialize ECG Simulator */
     ECG_Sim_Init();
 #endif
+
     /* Initialize Pan-Tompkins algorithm */
     PT_Init(&pt_handle);
+
     while (1) {
         if (ad8232_sample_ready == 1) {
             ad8232_sample_ready = 0;
-            
+
             uint16_t ecg_val = 0;
 
 #if USE_ECG_SIM
-            /* Simulation mode */
-            /* Skip leads off check */
+            /* Simulation mode (still paced by TIM3 @ 360Hz) */
             ecg_val = ECG_Sim_GetSample();
-            
-            /* Process simulated signal with Pan-Tompkins */
-            PT_Process(&pt_handle, ecg_val);
-            
-            /* Get BPM */
-            int bpm = PT_GetBPM(&pt_handle);
-
-            /* Send data */
-            sprintf(msg_buffer, "%d,%d\r\n", ecg_val, bpm);
-            HC05_SendString(msg_buffer);
-
 #else
             /* Real hardware mode */
             if (AD8232_IsLeadsOff()) {
                 sprintf(msg_buffer, "0,0\r\n");
                 HC05_SendString(msg_buffer);
-                pt.current_bpm = 0; 
-            } else {
-                ecg_val = AD8232_ReadValue();
-                PT_Process(&pt, ecg_val);
-                int bpm = PT_GetBPM(&pt);
-                sprintf(msg_buffer, "%d,%d\r\n", ecg_val, bpm);
-                HC05_SendString(msg_buffer);
+                pt_handle.current_bpm = 0;
+                continue;
             }
+            /* TIM3_IRQHandler already sampled ADC into ad8232_latest_adc */
+            ecg_val = ad8232_latest_adc;
 #endif
+
+            /* Process signal with Pan–Tompkins */
+            PT_Process(&pt_handle, ecg_val);
+
+            /* Get BPM and send */
+            int bpm = PT_GetBPM(&pt_handle);
+            sprintf(msg_buffer, "%d,%d\r\n", ecg_val, bpm);
+            HC05_SendString(msg_buffer);
         }
     }
 }
