@@ -161,17 +161,6 @@ while(1) {
    - Maintains chart data and BPM value
    - Layout reloads without reconnection
 
-#### **Permissions**
-```xml
-<!-- Android 6-11 -->
-android.permission.BLUETOOTH
-android.permission.BLUETOOTH_ADMIN
-android.permission.ACCESS_FINE_LOCATION
-
-<!-- Android 12+ -->
-android.permission.BLUETOOTH_SCAN
-android.permission.BLUETOOTH_CONNECT
-```
 
 #### **Data Reception Format**
 ```
