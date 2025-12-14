@@ -59,7 +59,7 @@ This project implements a complete heart rate monitoring solution using:
 - **Outputs**:
   - PA0: Analog ECG signal (ADC input)
   - PA1, PA4: Leads Off detection (GPIO input)
-- **Sampling Rate**: 100-200 Hz configurable
+- **Sampling Rate**: 360 Hz (fixed, configured by TIM3)
 
 ### 3. **HC-05 Bluetooth Module**
 - **Protocol**: Bluetooth Classic (SPP - Serial Port Profile)
@@ -79,7 +79,7 @@ This project implements a complete heart rate monitoring solution using:
 
 ```c
 // 1. Initialization Phase
-AD8232_Init(100);              // ECG ADC at 100Hz
+AD8232_Init(360);              // ECG ADC at 360 Hz
 HC05_Init();                   // Bluetooth UART
 PT_Init(&pt_handle);           // Pan-Tompkins algorithm
 
@@ -108,13 +108,14 @@ while(1) {
    - ASCII data format for mobile parsing
 
 3. **Pan-Tompkins Algorithm** (`Embedded/src/pan_tompkins.c`)
-   - **Stage 1**: Bandpass IIR filter (5-15 Hz)
-     - CMSIS-DSP biquad cascade filter
+   - **Stage 1**: Bandpass filter (5–15 Hz equivalent)
+     - Implemented using difference equations (LPF + HPF)
+     - Parameters scaled for Fs = 360 Hz
    - **Stage 2**: Derivative filter (5-point)
      - Emphasizes rapid signal changes
    - **Stage 3**: Squaring
      - Non-linear enhancement of QRS peaks
-   - **Stage 4**: Moving window integration (30-sample)
+   - **Stage 4**: Moving window integration (54 samples ≈ 150 ms @ 360 Hz)
      - Temporal smoothing
    - **Stage 5**: Adaptive threshold R-peak detection
      - Refractory period: 200 ms (prevents T-wave false positives)
@@ -123,14 +124,12 @@ while(1) {
 
 4. **ECG Simulator** (`Embedded/src/ecg_sim.c`)
    - Generates realistic ECG waveforms for testing
+   -  Signal timing scaled for Fs = 360 Hz
    - Toggle via `#define USE_ECG_SIM 1` in main.c
    - Useful for development without patient connection
 
 #### **ARM CMSIS-DSP Library**
 - **Location**: `Embedded/lib/DSP/`
-- **Functions Used**:
-  - `arm_biquad_cascade_df1_init_f32()` - Filter initialization
-  - `arm_biquad_cascade_df1_f32()` - Signal filtering
 - **Build Flag**: `-DARM_MATH_CM4` enables Cortex-M4 optimizations
 
 ### Android Application (Kotlin + Material Design)
@@ -242,15 +241,15 @@ cd Application
 ### Sampling Rate
 Modify in `Embedded/src/main.c`:
 ```c
-AD8232_Init(100);  // Change 100 to desired Hz (50-500 recommended)
+AD8232_Init(360);
 ```
-**Impact**: Affects Pan-Tompkins window sizes and BPM calculation accuracy.
+**Note**: Changing the sampling rate requires redesign of all Pan–Tompkins filter delays and window sizes.
 
 ### Pan-Tompkins Sensitivity
 Modify in `Embedded/include/pan_tompkins.h`:
 ```c
-#define SAMPLE_RATE_HZ      200.0f
-#define INTEGRATION_WINDOW  30      // Larger = smoother, slower response
+#define SAMPLE_RATE_HZ      360.0f
+#define INTEGRATION_WINDOW  54   // 150 ms window @ 360 Hz
 ```
 
 ### BPM Smoothing
@@ -367,9 +366,9 @@ Heart-Monitor-App/
 
 | Metric | Value |
 |--------|-------|
-| **ECG Sampling Rate** | 100-200 Hz (configurable) |
+| **ECG Sampling Rate** | 360 Hz |
 | **ADC Resolution** | 12-bit (0-4095) |
-| **Bandpass Filter** | 5-15 Hz (IIR Biquad) |
+| **Bandpass Filter** | 5–15 Hz equivalent (difference-equation Pan–Tompkins) |
 | **R-Peak Detection Latency** | ~150 ms (algorithm + transmission) |
 | **Valid BPM Range** | 40-200 bpm |
 | **Refractory Period** | 200 ms (prevents false detections) |
