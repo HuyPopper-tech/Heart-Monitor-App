@@ -70,6 +70,13 @@ typedef struct {
     uint32_t last_decay_tick;
     int      current_bpm;
 
+
+    /* ---- Expose intermediate/output signals for app ---- */
+    float32_t out_x_dc;
+    float32_t out_y_lpf;
+    float32_t out_y_hpf;
+    float32_t out_integrated;
+
 } PanTompkins_Handle_t;
 
 void PT_Init(PanTompkins_Handle_t *ht);

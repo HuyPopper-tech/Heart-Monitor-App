@@ -47,7 +47,6 @@ class MainActivity : AppCompatActivity() {
 
     /* Current BPM value - preserved during screen rotation */
     private var currentBpm = 0
-
     /* Standard UUID for HC-05 Bluetooth module (SPP) */
     private val MY_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private val DEVICE_NAME = "HC-05"
@@ -55,6 +54,15 @@ class MainActivity : AppCompatActivity() {
     /* Chart data entries - preserved during screen rotation */
     private val entries = ArrayList<Entry>()
 
+    /* Sweep / overwrite mode */
+    private companion object {
+        private const val SWEEP_WINDOW_POINTS = 250   /* width of one sweep (number of points) */
+        private const val Y_MIN = 0f
+        private const val Y_MAX = 4095f
+    }
+
+    /* current "write head" position (0..SWEEP_WINDOW_POINTS-1) */
+    private var sweepIndex = 0
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initUI()
@@ -77,12 +85,14 @@ class MainActivity : AppCompatActivity() {
         /* Restore chart data to the new chart instance */
         if (entries.isNotEmpty()) {
             val set = createSet()
-            set.values = ArrayList(entries)
+            set.values = entries
             val data = LineData(set)
             data.setValueTextColor(Color.WHITE)
             binding.chart.data = data
             binding.chart.notifyDataSetChanged()
-            binding.chart.moveViewToX(data.entryCount.toFloat())
+
+            binding.chart.setVisibleXRangeMaximum(SWEEP_WINDOW_POINTS.toFloat())
+            binding.chart.moveViewToX(0f)
         }
 
         /* Restore connection status and BPM display */
@@ -102,6 +112,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupChart()
+        resetChart()
 
         /* Setup connect/disconnect button listener */
         binding.btnConnect.setOnClickListener {
@@ -111,6 +122,24 @@ class MainActivity : AppCompatActivity() {
                 checkPermissionsAndConnect()
             }
         }
+    }
+
+    private fun resetChart() {
+        entries.clear()
+        sweepIndex = 0
+
+        val set = createSet()
+
+        for (i in 0 until SWEEP_WINDOW_POINTS) {
+            entries.add(Entry(i.toFloat(), Y_MIN))
+        }
+        set.values = entries
+
+        val data = LineData(set)
+        binding.chart.data = data
+
+        binding.chart.notifyDataSetChanged()
+        binding.chart.invalidate()
     }
 
     /**
@@ -127,7 +156,15 @@ class MainActivity : AppCompatActivity() {
         chart.setBackgroundColor(Color.TRANSPARENT)
         chart.legend.isEnabled = false
 
-        val data = LineData()
+        val set = createSet()
+
+        entries.clear()
+        for (i in 0 until SWEEP_WINDOW_POINTS) {
+            entries.add(Entry(i.toFloat(), Float.NaN))
+        }
+        set.values = entries
+
+        val data = LineData(set)
         chart.data = data
 
         chart.xAxis.isEnabled = false
@@ -138,6 +175,19 @@ class MainActivity : AppCompatActivity() {
         leftAxis.setDrawGridLines(true)
         leftAxis.gridColor = "#33FFFFFF".toColorInt()
         leftAxis.axisLineColor = Color.TRANSPARENT
+
+        /* Fix Y axis range: 0..4095 */
+        leftAxis.axisMinimum = Y_MIN
+        leftAxis.axisMaximum = Y_MAX
+
+        /* Fix X window for sweep */
+        chart.xAxis.axisMinimum = 0f
+        chart.xAxis.axisMaximum = (SWEEP_WINDOW_POINTS - 1).toFloat()
+
+        chart.setVisibleXRangeMaximum(SWEEP_WINDOW_POINTS.toFloat())
+        chart.moveViewToX(0f)
+
+        chart.invalidate()
     }
 
     /**
@@ -145,39 +195,35 @@ class MainActivity : AppCompatActivity() {
      * @param value The ECG signal value to add
      */
     private fun addEntry(value: Float) {
-        val data = binding.chart.data ?: return
+        val chart = binding.chart
+        val data = chart.data ?: return
 
-        var set = data.getDataSetByIndex(0)
+        var set = data.getDataSetByIndex(0) as? LineDataSet
         if (set == null) {
             set = createSet()
             data.addDataSet(set)
         }
 
-        /* Add entry to chart */
-        data.addEntry(Entry(set.entryCount.toFloat(), value), 0)
+        /* Clamp to fixed Y range 0..4095 */
+        val v = value.coerceIn(Y_MIN, Y_MAX)
 
-        /* Store entry for rotation persistence */
-        entries.add(Entry(entries.size.toFloat(), value))
+        /* Overwrite point at current sweep position */
+        if (sweepIndex >= entries.size) sweepIndex = 0
+        entries[sweepIndex].y = v
 
-        /* Limit entries to prevent memory overflow - keep last 500 points */
-        if (entries.size > 500) {
-            entries.removeAt(0)
-
-            /* Re-index entries for continuous line rendering */
-            for (i in entries.indices) {
-                entries[i].x = i.toFloat()
-            }
-
-            /* Update dataset with re-indexed entries */
-            if (set is LineDataSet) {
-                set.values = entries
-            }
+        /* Advance write head (wrap without clearing) */
+        sweepIndex++
+        if (sweepIndex >= SWEEP_WINDOW_POINTS) {
+            sweepIndex = 0
         }
 
         data.notifyDataChanged()
-        binding.chart.notifyDataSetChanged()
-        binding.chart.setVisibleXRangeMaximum(100f)
-        binding.chart.moveViewToX(data.entryCount.toFloat())
+        chart.notifyDataSetChanged()
+
+        /* Keep the view fixed; we are overwriting in-place */
+        chart.setVisibleXRangeMaximum(SWEEP_WINDOW_POINTS.toFloat())
+        chart.moveViewToX(0f)
+        chart.invalidate()
     }
 
     /**
@@ -192,7 +238,7 @@ class MainActivity : AppCompatActivity() {
         set.mode = LineDataSet.Mode.CUBIC_BEZIER
         set.setDrawCircles(false)
         set.setDrawValues(false)
-        set.setDrawFilled(true)
+        set.setDrawFilled(false)
         set.fillColor = "#FF4081".toColorInt()
         set.fillAlpha = 30
         set.isHighlightEnabled = false
@@ -395,8 +441,7 @@ class MainActivity : AppCompatActivity() {
             binding.tvBPM.text = "--"
 
             /* Clear chart data on disconnect */
-            entries.clear()
-            binding.chart.clear()
+            resetChart()
 
         } catch (e: IOException) {
             e.printStackTrace()

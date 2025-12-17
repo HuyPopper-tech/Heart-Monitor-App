@@ -1,12 +1,15 @@
 #include "main.h"
-#include "hc05.h"
-#include "ad8232.h"
-#include "pan_tompkins.h"
-#include "ecg_sim.h"
+
 #include <stdio.h>
 
+#include "ad8232.h"
+#include "ecg_sim.h"
+#include "hc05.h"
+#include "pan_tompkins.h"
+#include "usart2.h"
+
 /* Set to 1 to use ECG simulator instead of AD8232 */
-#define USE_ECG_SIM 1
+#define USE_ECG_SIM 0
 
 void SystemClock_Config(void);
 void Error_Handler(void);
@@ -21,8 +24,10 @@ int main(void) {
     /* Initialize HC-05 */
     HC05_Init();
 
-    /* Report sampling frequency: 360Hz */
+    /* Sampling frequency: 360Hz */
     AD8232_Init(360);
+
+    USART2_Init();
 
 #if USE_ECG_SIM
     ECG_Sim_Init();
@@ -57,8 +62,22 @@ int main(void) {
 
             /* Get BPM and send */
             int bpm = PT_GetBPM(&pt_handle);
+            int32_t tmp = (int32_t)(pt_handle.out_y_hpf / 8.0f) + 2048;
+            if (tmp < 0) tmp = 0;
+            if (tmp > 4095) tmp = 4095;
+            uint16_t ecg_filtered = (uint16_t)tmp;
+
             sprintf(msg_buffer, "%d,%d\r\n", ecg_val, bpm);
             HC05_SendString(msg_buffer);
+
+            /* Debug */
+            int16_t integrated_scaled = (int16_t)(pt_handle.out_integrated / 4000.0f);
+            int16_t threshold_scaled = (int16_t)(pt_handle.threshold_i / 4000.0f);
+            USART2_LogSignals((int16_t)(ecg_val - 2048),          /* Raw centered */
+                              (int16_t)pt_handle.out_y_hpf,       /* Filtered */
+                              integrated_scaled,                  /* Integrated */
+                              threshold_scaled                    /* Threshold */
+            );
         }
     }
 }
@@ -133,6 +152,5 @@ void Error_Handler(void) {
 }
 #ifdef USE_FULL_ASSERT
 /* Assert failed handler */
-void assert_failed(uint8_t* file, uint32_t line) {
-}
+void assert_failed(uint8_t* file, uint32_t line) {}
 #endif /* USE_FULL_ASSERT */

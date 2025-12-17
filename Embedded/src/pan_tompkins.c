@@ -44,6 +44,7 @@ uint8_t PT_Process(PanTompkins_Handle_t *ht, uint16_t raw_adc) {
     float32_t x_dc = 0.995f * ht->dc_y1 + (x - ht->dc_x1);
     ht->dc_x1 = x;
     ht->dc_y1 = x_dc;
+    ht->out_x_dc = x_dc;
 
     /* Stage 1a: LPF (scaled integer structure) */
     const uint16_t lpf_size = (uint16_t)(2u*LPF_DELAY_M + 1u);
@@ -59,6 +60,7 @@ uint8_t PT_Process(PanTompkins_Handle_t *ht, uint16_t raw_adc) {
 
     ht->lpf_y2 = ht->lpf_y1;
     ht->lpf_y1 = y_lpf;
+    ht->out_y_lpf = y_lpf;
 
     ht->lpf_idx++;
     if (ht->lpf_idx >= lpf_size) ht->lpf_idx = 0;
@@ -80,6 +82,7 @@ uint8_t PT_Process(PanTompkins_Handle_t *ht, uint16_t raw_adc) {
                       + (v_n_2N / HPF_DIV_K);
 
     ht->hpf_y1 = y_hpf;
+    ht->out_y_hpf = y_hpf;
 
     ht->hpf_idx++;
     if (ht->hpf_idx >= hpf_size) ht->hpf_idx = 0;
@@ -105,6 +108,7 @@ uint8_t PT_Process(PanTompkins_Handle_t *ht, uint16_t raw_adc) {
     if (ht->win_idx >= INTEGRATION_WINDOW) ht->win_idx = 0;
 
     float32_t integrated = ht->win_sum / (float32_t)INTEGRATION_WINDOW;
+    ht->out_integrated = integrated;
 
     /* Stage 5: Local maxima detection on integrated signal (per report) */
     uint8_t is_beat = 0;
